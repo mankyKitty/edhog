@@ -1,5 +1,5 @@
 { mkDerivation, base, bytestring, hedgehog, lens, process, stdenv
-, text, turtle, typed-process, unix
+, text, typed-process, unix
 }:
 mkDerivation {
   pname = "fp-eedee";
@@ -7,8 +7,7 @@ mkDerivation {
   src = ./.;
   libraryHaskellDepends = [ base ];
   testHaskellDepends = [
-    base bytestring hedgehog lens process text turtle typed-process
-    unix
+    base bytestring hedgehog lens process text typed-process unix
   ];
   doHaddock = false;
   license = "unknown";
