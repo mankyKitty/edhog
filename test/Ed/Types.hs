@@ -11,7 +11,9 @@ import           Hedgehog       (HTraversable (..))
 import           System.IO      (Handle)
 import qualified System.Process as P
 
-import           Data.Text      (Text)
+import           Data.Text      (Text, pack)
+
+import           Text.Printf            (printf)
 
 -- @/bin/ed@ Process
 data EdProc = EdProc
@@ -28,6 +30,12 @@ data EdModel (v :: * -> *) = EdModel
   deriving (Eq, Show)
 makeClassy ''EdModel
 
+singleAddrCmd :: Char -> Word -> Text
+singleAddrCmd cmd w = pack $ printf "%u%c" w cmd
+
+rangeAddrCmd :: Char -> Word -> Word -> Text
+rangeAddrCmd cmd s e = pack $ printf "%u,%u%c" cmd s e
+
 bufferLength :: HasEdModel s v => s -> Word
 bufferLength = fromIntegral . lengthOf (edBuffer . folded)
 
@@ -35,7 +43,7 @@ emptyBuffer :: HasEdModel s v => s -> Bool
 emptyBuffer = nullOf (edBuffer . folded)
 
 addressInBuffer :: HasEdModel s v => s -> Word -> Bool
-addressInBuffer ed ln = ln >= 0 && ln < bufferLength ed && not (emptyBuffer ed)
+addressInBuffer ed ln = ln < bufferLength ed && not (emptyBuffer ed)
 
 -- The black box of @/bin/ed@
 data BBEd = BBEd

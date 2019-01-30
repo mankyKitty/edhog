@@ -2,8 +2,8 @@
 module Ed.Memory where
 
 import           Control.Applicative    (liftA2)
-import           Control.Lens           (ix, lengthOf, snoc, (%~), (.~), (^.),
-                                         (^?))
+import           Control.Lens           (ix, snoc, (%~), (.~),
+                                         (^.), (^?))
 import           Control.Monad.IO.Class (MonadIO)
 
 import           System.Timeout         (timeout)
@@ -26,16 +26,11 @@ import qualified Hedgehog.Range         as Range
 
 import           Ed.Types
 
-import           Text.Printf            (printf)
-
-formatCmd :: String -> Word -> Text
-formatCmd str = T.pack . printf str
-
 genSafeLineNum :: (HasEdModel s v, MonadGen m) => s -> m Word
-genSafeLineNum = Gen.word . Range.linear 1 . fromIntegral . lengthOf edBuffer
+genSafeLineNum = Gen.word . Range.linear 1 . bufferLength
 
 genTextInp :: MonadGen m => m Text
-genTextInp = Gen.text (Range.linear 1 100) Gen.unicode
+genTextInp = Gen.text (Range.linear 1 100) Gen.alphaNum
 
 cAppendText
   :: ( MonadGen n
@@ -71,32 +66,6 @@ cAppendText edProc =
         T.unlines newB === bbEd ^. bbEdBuffer
     ]
 
-cPrintAll
-  :: ( MonadIO m
-     , MonadTest m
-     , MonadGen n
-     )
-  => EdProc
-  -> Command n m EdModel
-cPrintAll edProc =
-  let
-    gen _ = Just $ Gen.constant Cmd_PrintAll
-
-    execute _ = evalIO $
-      edCmd edProc ",p" *> getBlackBoxState edProc
-  in
-    Command gen execute
-    [ Require $ \ed _ ->
-        not $ emptyBuffer ed
-
-    , Update $ \ed _ _ ->
-        ed & edAddress .~ bufferLength ed
-
-    , Ensure $ \_ edNew _ bbEd -> do
-        bbEd ^. bbEdAddress === edNew ^? edAddress
-        bbEd ^. bbEdBuffer === T.unlines (edNew ^. edBuffer)
-    ]
-
 cDeleteLine
   :: ( MonadIO m
      , MonadTest m
@@ -109,7 +78,7 @@ cDeleteLine edProc =
     gen = Just . fmap Cmd_DeleteLine . genSafeLineNum
 
     execute (Cmd_DeleteLine n) = evalIO $
-      edCmd edProc (formatCmd "%ud" n) *> getBlackBoxState edProc
+      edCmd edProc (singleAddrCmd 'd' n) *> getBlackBoxState edProc
   in
     Command gen execute
     [ Require $ \ed (Cmd_DeleteLine ln) ->
@@ -150,7 +119,7 @@ cAppendAt edProc =
 
     execute (Cmd_AppendAt ln i) = evalIO $
       traverse_ (edCmd edProc)
-        [ formatCmd "%ua" ln
+        [ singleAddrCmd 'a' ln
         , i
         , "."
         ]
@@ -207,7 +176,7 @@ prop_ed_blackbox_memory edProc = property $ do
 
     initialState = EdModel mempty 0
 
-  actions <- forAll $ Gen.sequential (Range.linear 1 10) initialState cmds
+  actions <- forAll $ Gen.sequential (Range.linear 1 20) initialState cmds
 
   -- Reset the ed buffer
   evalIO $ do
