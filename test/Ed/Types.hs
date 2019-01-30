@@ -5,13 +5,14 @@
 {-# LANGUAGE TemplateHaskell        #-}
 module Ed.Types where
 
-import           Control.Lens   (folded, lengthOf, makeClassy, nullOf)
+import           Control.Lens   (folded, lengthOf, makeClassy, nullOf, view, to)
 import           Hedgehog       (HTraversable (..))
 
 import           System.IO      (Handle)
 import qualified System.Process as P
 
 import           Data.Text      (Text, pack)
+import qualified Data.Text as T
 
 import           Text.Printf            (printf)
 
@@ -38,6 +39,9 @@ rangeAddrCmd cmd s e = pack $ printf "%u,%u%c" cmd s e
 
 bufferLength :: HasEdModel s v => s -> Word
 bufferLength = fromIntegral . lengthOf (edBuffer . folded)
+
+fromModelBuffer :: HasEdModel s v => s -> Text
+fromModelBuffer = view (edBuffer . to T.unlines)
 
 emptyBuffer :: HasEdModel s v => s -> Bool
 emptyBuffer = nullOf (edBuffer . folded)

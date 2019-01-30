@@ -33,12 +33,12 @@ genTextInp :: MonadGen m => m Text
 genTextInp = Gen.text (Range.linear 1 100) Gen.alphaNum
 
 cAppendText
-  :: ( MonadGen n
+  :: ( MonadGen g
      , MonadIO m
      , MonadTest m
      )
   => EdProc
-  -> Command n m EdModel
+  -> Command g m EdModel
 cAppendText edProc =
   let
     gen _ = Just $ Cmd_Append <$> genTextInp
@@ -57,22 +57,18 @@ cAppendText edProc =
       & edAddress .~ if emptyBuffer ed then 1 else bufferLength ed + 1
 
     , Ensure $ \edOld edNew (Cmd_Append i) bbEd -> do
-        let newB = edNew ^. edBuffer
-            oldB = edOld ^. edBuffer
-
         edNew ^? edAddress === bbEd ^. bbEdAddress
-
-        newB === snoc oldB i
-        T.unlines newB === bbEd ^. bbEdBuffer
+        edNew ^. edBuffer === snoc (edOld ^. edBuffer) i
+        fromModelBuffer edNew === bbEd ^. bbEdBuffer
     ]
 
 cDeleteLine
   :: ( MonadIO m
      , MonadTest m
-     , MonadGen n
+     , MonadGen g
      )
   => EdProc
-  -> Command n m EdModel
+  -> Command g m EdModel
 cDeleteLine edProc =
   let
     gen = Just . fmap Cmd_DeleteLine . genSafeLineNum
@@ -88,15 +84,13 @@ cDeleteLine edProc =
         & edBuffer %~ bifold . first (take (fromIntegral n - 1)) . splitAt (fromIntegral n)
         & edAddress .~ n
 
-    , Ensure $ \oldEd newEd (Cmd_DeleteLine n) bbEd -> do
+    , Ensure $ \edOld edNew (Cmd_DeleteLine n) bbEd -> do
         let
-          newB = newEd ^. edBuffer
-          oldB = oldEd ^. edBuffer
+          newB = edNew ^. edBuffer
+          oldB = edOld ^. edBuffer
 
-          bbEdB = bbEd ^. bbEdBuffer
-
-        T.unlines newB === bbEdB
-        newEd ^? edAddress === bbEd ^. bbEdAddress
+        fromModelBuffer edNew === bbEd ^. bbEdBuffer
+        edNew ^? edAddress === bbEd ^. bbEdAddress
 
         let n' = fromIntegral n
 
@@ -105,12 +99,12 @@ cDeleteLine edProc =
     ]
 
 cAppendAt
-  :: ( MonadGen n
+  :: ( MonadGen g
      , MonadIO m
      , MonadTest m
      )
   => EdProc
-  -> Command n m EdModel
+  -> Command g m EdModel
 cAppendAt edProc =
   let
     gen b = Just $ Cmd_AppendAt
@@ -135,29 +129,26 @@ cAppendAt edProc =
       & edAddress .~ ln + 1
 
     , Ensure $ \_ edNew (Cmd_AppendAt ln i) bbEd -> do
-        let newB = edNew ^. edBuffer
-            newA = edNew ^. edAddress
+        fromModelBuffer edNew === bbEd ^. bbEdBuffer
 
-            bbEdB = bbEd ^. bbEdBuffer
-            bbEdA = bbEd ^. bbEdAddress
-
-        T.unlines newB === bbEdB
-
-        Just newA === bbEdA
-        newB ^? ix (fromIntegral ln) === Just i
+        edNew ^? edAddress === bbEd ^. bbEdAddress
+        edNew ^? edBuffer . ix (fromIntegral ln) === Just i
     ]
 
 edCmd :: EdProc -> Text -> IO ()
 edCmd p c = T.hPutStrLn (_edIn p) c
 
+readEdLine :: EdProc -> IO (Maybe Text)
+readEdLine = timeout 2500 . T.hGetLine . _edOut
+
 getCurrentLine :: EdProc -> IO (Maybe Word)
-getCurrentLine ed = fmap (readMaybe . T.unpack)
-  $ edCmd ed ".=" *> T.hGetLine (_edOut ed)
+getCurrentLine ed = fmap (readMaybe . T.unpack =<<)
+  $ edCmd ed ".=" *> readEdLine ed
 
 readEntireBuffer :: EdProc -> IO Text
 readEntireBuffer ed = edCmd ed ",p" *> go []
   where
-    go acc = (timeout 2500 $ T.hGetLine (_edOut ed))
+    go acc = readEdLine ed
       >>= maybe (pure . T.unlines . reverse $ acc) (go . (:acc))
 
 -- Must get address before reading the entire buffer as reading the buffer will
