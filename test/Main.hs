@@ -3,14 +3,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
+import Control.Monad (unless)
+
 import           Hedgehog
 
 import           System.Exit    (exitFailure, exitSuccess)
 import           System.IO      (BufferMode (..), hSetBuffering)
 
+import qualified Data.Text.IO as T
+
 import qualified System.Process as P
 
-import qualified Ed.File        as EF
 import qualified Ed.Memory      as EM
 import           Ed.Types
 
@@ -31,16 +34,15 @@ main1 = do
        [ ("property_a_p", EM.prop_ed_blackbox_memory edProc)
        ]
 
+    unless b $ T.putStrLn "Ed Buffer:"
+      *> EM.readEntireBuffer edProc
+      >>= T.putStrLn
+
     EM.edCmd edProc "Q"
 
     pure b
 
   if b then exitSuccess else exitFailure
-
-main2 :: IO Bool
-main2 = checkSequential $ Group "Ed Black-Box State Machine Tests"
-  [ ("Cmds: [<n>a,a,<n>d,p]", EF.prop_ed_blackbox_file)
-  ]
 
 main :: IO ()
 main = main1

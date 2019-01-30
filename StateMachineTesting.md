@@ -12,6 +12,21 @@ b) Add addressing for the above commands, add current line to model.
 
 Model type provided: `Coffee Machine`
 
+Define the state machine for the coffee machine operations:
+
+- 1. add mug
+- 2. remove mug
+- 3-N. configure beverage
+- S N. add coin
+- S(S N), press dispense button
+
+```
+data Drink
+  = HotChocolate
+  | Tea Int Int
+  | Coffee Int Int
+```
+
 Array of implementations provided, all are buggy. The goal is to use state
 machine testing to identify bugs in the applications, or gaps in the model.
 
@@ -23,4 +38,7 @@ machine testing to identify bugs in the applications, or gaps in the model.
 
 - Positive (should confirm desired functionality) & negative (should confirm
   failure expectations) commands
-- 
+
+Structure:
+Single cabal project
+- Exercises/levels in subfolders.

@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Ed.Memory where
 
-import           Control.Lens           (ix, snoc, (^?))
+import           Control.Applicative    (liftA2)
+import           Control.Lens           (ix, lengthOf, snoc, (%~), (.~), (^.),
+                                         (^?))
 import           Control.Monad.IO.Class (MonadIO)
 
 import           System.Timeout         (timeout)
@@ -9,6 +11,9 @@ import           System.Timeout         (timeout)
 import           Data.Bifoldable        (bifold)
 import           Data.Bifunctor         (first, second)
 import           Data.Foldable          (traverse_)
+import           Data.Function          ((&))
+
+import           Text.Read              (readMaybe)
 
 import           Data.Text              (Text)
 import qualified Data.Text              as T
@@ -20,13 +25,17 @@ import qualified Hedgehog.Gen           as Gen
 import qualified Hedgehog.Range         as Range
 
 import           Ed.Types
-import           Turtle.Format          (d, format, (%))
 
-genLineNum :: MonadGen m => Buffer v -> m Word
-genLineNum (Buffer b) = Gen.word (Range.linear 1 (fromIntegral $ length b))
+import           Text.Printf            (printf)
+
+formatCmd :: String -> Word -> Text
+formatCmd str = T.pack . printf str
+
+genSafeLineNum :: (HasEdModel s v, MonadGen m) => s -> m Word
+genSafeLineNum = Gen.word . Range.linear 1 . fromIntegral . lengthOf edBuffer
 
 genTextInp :: MonadGen m => m Text
-genTextInp = Gen.text (Range.linear 1 100) Gen.alphaNum
+genTextInp = Gen.text (Range.linear 1 100) Gen.unicode
 
 cAppendText
   :: ( MonadGen n
@@ -34,26 +43,32 @@ cAppendText
      , MonadTest m
      )
   => EdProc
-  -> Command n m Buffer
+  -> Command n m EdModel
 cAppendText edProc =
   let
-    gen _ = Just $ Cmd_Append <$> (Gen.text (Range.linear 1 100) Gen.alphaNum)
+    gen _ = Just $ Cmd_Append <$> genTextInp
 
-    execute (Cmd_Append t) = evalIO $ do
-      let ec = edCmd edProc
-      ec "a"
-      ec t
-      ec "."
-      ec ",p"
-      readPrintedLines edProc
+    execute (Cmd_Append t) = evalIO $
+      traverse_ (edCmd edProc)
+        [ "a"
+        , t
+        , "."
+        ]
+      *> getBlackBoxState edProc
   in
     Command gen execute
-    [ Update $ \(Buffer b) (Cmd_Append i) _ ->
-        Buffer (snoc b i)
+    [ Update $ \ed (Cmd_Append i) _ -> ed
+      & edBuffer %~ flip snoc i
+      & edAddress .~ if emptyBuffer ed then 1 else bufferLength ed + 1
 
-    , Ensure $ \(Buffer old) (Buffer new) (Cmd_Append i) out -> do
-        new === snoc old i
-        T.unlines new === out
+    , Ensure $ \edOld edNew (Cmd_Append i) bbEd -> do
+        let newB = edNew ^. edBuffer
+            oldB = edOld ^. edBuffer
+
+        edNew ^? edAddress === bbEd ^. bbEdAddress
+
+        newB === snoc oldB i
+        T.unlines newB === bbEd ^. bbEdBuffer
     ]
 
 cPrintAll
@@ -62,19 +77,24 @@ cPrintAll
      , MonadGen n
      )
   => EdProc
-  -> Command n m Buffer
+  -> Command n m EdModel
 cPrintAll edProc =
   let
     gen _ = Just $ Gen.constant Cmd_PrintAll
 
-    execute _ = evalIO $ do
-      edCmd edProc ",p"
-      readPrintedLines edProc
+    execute _ = evalIO $
+      edCmd edProc ",p" *> getBlackBoxState edProc
   in
     Command gen execute
-    [ Require $ \(Buffer cur) _ -> not $ null cur
-    , Ensure $ \(Buffer _old) (Buffer new) _ out ->
-        out === T.unlines new
+    [ Require $ \ed _ ->
+        not $ emptyBuffer ed
+
+    , Update $ \ed _ _ ->
+        ed & edAddress .~ bufferLength ed
+
+    , Ensure $ \_ edNew _ bbEd -> do
+        bbEd ^. bbEdAddress === edNew ^? edAddress
+        bbEd ^. bbEdBuffer === T.unlines (edNew ^. edBuffer)
     ]
 
 cDeleteLine
@@ -83,33 +103,37 @@ cDeleteLine
      , MonadGen n
      )
   => EdProc
-  -> Command n m Buffer
+  -> Command n m EdModel
 cDeleteLine edProc =
   let
-    gen (Buffer b) = Just $ Cmd_DeleteLine
-      <$> Gen.word (Range.linear 1 (fromIntegral $ length b))
+    gen = Just . fmap Cmd_DeleteLine . genSafeLineNum
 
-    execute (Cmd_DeleteLine n) = evalIO $ do
-      edCmd edProc $ format (d%"d") n
-      readPrintedLines edProc
+    execute (Cmd_DeleteLine n) = evalIO $
+      edCmd edProc (formatCmd "%ud" n) *> getBlackBoxState edProc
   in
     Command gen execute
-    [ Require $ \(Buffer b) (Cmd_DeleteLine n) ->
-        n >= 0 && n < fromIntegral (length b) && not (null b)
+    [ Require $ \ed (Cmd_DeleteLine ln) ->
+        addressInBuffer ed ln
 
-    , Update $ \(Buffer b) (Cmd_DeleteLine n) _ ->
-        Buffer
-        . bifold
-        . first (take (fromIntegral n - 1))
-        $ splitAt (fromIntegral n) b
+    , Update $ \ed (Cmd_DeleteLine n) _ -> ed
+        & edBuffer %~ bifold . first (take (fromIntegral n - 1)) . splitAt (fromIntegral n)
+        & edAddress .~ n
 
-    , Ensure $ \(Buffer old) (Buffer new) (Cmd_DeleteLine n) out -> do
-        T.unlines new === out
+    , Ensure $ \oldEd newEd (Cmd_DeleteLine n) bbEd -> do
+        let
+          newB = newEd ^. edBuffer
+          oldB = oldEd ^. edBuffer
+
+          bbEdB = bbEd ^. bbEdBuffer
+
+        T.unlines newB === bbEdB
+        newEd ^? edAddress === bbEd ^. bbEdAddress
+
         let n' = fromIntegral n
-        new ^? ix n'       === old ^? ix (n' + 1)
-        new ^? ix (n' - 1) === old ^? ix n'
-    ]
 
+        newB ^? ix n'       === oldB ^? ix (n' + 1)
+        newB ^? ix (n' - 1) === oldB ^? ix n'
+    ]
 
 cAppendAt
   :: ( MonadGen n
@@ -117,62 +141,79 @@ cAppendAt
      , MonadTest m
      )
   => EdProc
-  -> Command n m Buffer
+  -> Command n m EdModel
 cAppendAt edProc =
   let
-    gen b = Just $
-      Cmd_AppendAt <$> genLineNum b <*> genTextInp
+    gen b = Just $ Cmd_AppendAt
+      <$> genSafeLineNum b
+      <*> genTextInp
 
     execute (Cmd_AppendAt ln i) = evalIO $
       traverse_ (edCmd edProc)
-        [ format (d%"a") ln
+        [ formatCmd "%ua" ln
         , i
         , "."
         ]
-      >> readPrintedLines edProc
+      *> getBlackBoxState edProc
   in
     Command gen execute
-    [ Require $ \(Buffer b) (Cmd_AppendAt ln _) ->
-        ln >= 0 && ln < fromIntegral (length b) && not (null b)
+    [ Require $ \ed (Cmd_AppendAt ln _) ->
+        addressInBuffer ed ln
 
-    , Update $ \(Buffer b) (Cmd_AppendAt ln i) _ ->
-        Buffer
-        . bifold
-        . second (i:)
-        . splitAt (fromIntegral ln) $ b
+    , Update $ \ed (Cmd_AppendAt ln i) _ -> ed
+      & edBuffer %~ bifold . second (i:) . splitAt (fromIntegral ln)
+      -- We end on the line following the append
+      & edAddress .~ ln + 1
 
-    , Ensure $ \(Buffer _old) (Buffer new) (Cmd_AppendAt ln i) out -> do
-        T.unlines new === out
-        -- Can't get here without having perfomed a valid insert, so totes safe, right?...RIGHT!?
-        new !! (fromIntegral ln) === i
+    , Ensure $ \_ edNew (Cmd_AppendAt ln i) bbEd -> do
+        let newB = edNew ^. edBuffer
+            newA = edNew ^. edAddress
+
+            bbEdB = bbEd ^. bbEdBuffer
+            bbEdA = bbEd ^. bbEdAddress
+
+        T.unlines newB === bbEdB
+
+        Just newA === bbEdA
+        newB ^? ix (fromIntegral ln) === Just i
     ]
 
 edCmd :: EdProc -> Text -> IO ()
 edCmd p c = T.hPutStrLn (_edIn p) c
 
-readPrintedLines :: EdProc -> IO Text
-readPrintedLines ed = go []
+getCurrentLine :: EdProc -> IO (Maybe Word)
+getCurrentLine ed = fmap (readMaybe . T.unpack)
+  $ edCmd ed ".=" *> T.hGetLine (_edOut ed)
+
+readEntireBuffer :: EdProc -> IO Text
+readEntireBuffer ed = edCmd ed ",p" *> go []
   where
-    go acc = do
-      ma <- timeout 2500 $ T.hGetLine (_edOut ed)
-      case ma of
-        Nothing -> pure . T.unlines . reverse $ acc
-        Just a  -> go (a:acc)
+    go acc = (timeout 2500 $ T.hGetLine (_edOut ed))
+      >>= maybe (pure . T.unlines . reverse $ acc) (go . (:acc))
+
+-- Must get address before reading the entire buffer as reading the buffer will
+-- change the address.
+getBlackBoxState :: EdProc -> IO BBEd
+getBlackBoxState ed = liftA2 BBEd (getCurrentLine ed) (readEntireBuffer ed)
 
 prop_ed_blackbox_memory :: EdProc -> Property
 prop_ed_blackbox_memory edProc = property $ do
   let
-    cmds = ($ edProc) <$> [cAppendText, cPrintAll]
-    initialState = Buffer mempty
+    cmds = ($ edProc) <$>
+      [ cAppendText
+      , cAppendAt
+      , cDeleteLine
+      ]
+
+    initialState = EdModel mempty 0
 
   actions <- forAll $ Gen.sequential (Range.linear 1 10) initialState cmds
 
   -- Reset the ed buffer
   evalIO $ do
     edCmd edProc "a"
-    edCmd edProc "avoiding invalid address error :/"
+    edCmd edProc "avoiding invalid address error"
     edCmd edProc "."
     edCmd edProc ",d"
 
   executeSequential initialState actions
-
