@@ -35,9 +35,6 @@ drinkCost (Tea (MilkSugar m s)) = 3 + m + s
 
 newtype Mug = Mug (Maybe Drink) deriving Show
 
-_Mug :: Iso' Mug (Maybe Drink)
-_Mug = iso (\(Mug md) -> md) Mug
-
 data MachineState = MachineState
   { _coins :: Int
   , _drinkSetting :: Drink
