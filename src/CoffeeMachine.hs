@@ -5,7 +5,7 @@
 
 module CoffeeMachine where
 
-import Control.Lens (failing, use)
+import Control.Lens (Iso', failing, use, iso)
 import Control.Lens.Operators
 import Control.Lens.TH (makeLenses, makePrisms)
 import Control.Monad (when)
@@ -34,6 +34,9 @@ drinkCost (Coffee (MilkSugar m s)) = 4 + m + s
 drinkCost (Tea (MilkSugar m s)) = 3 + m + s
 
 newtype Mug = Mug (Maybe Drink) deriving Show
+
+_Mug :: Iso' Mug (Maybe Drink)
+_Mug = iso (\(Mug md) -> md) Mug
 
 data MachineState = MachineState
   { _coins :: Int
