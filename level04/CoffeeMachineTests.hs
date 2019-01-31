@@ -60,18 +60,18 @@ cSetDrinkType ref = Command gen exec
         Tea -> C.tea
       view C.drinkSetting <$> R.readIORef ref
 
+genAddMug :: MonadGen g => Model Symbolic -> Maybe (g (AddMug Symbolic))
+genAddMug = const (Just $ pure AddMug)
+
 cAddMugHappy
   :: forall g m. (MonadGen g, MonadTest m, MonadIO m)
   => R.IORef C.MachineState
   -> Command g m Model
-cAddMugHappy ref = Command gen exec
+cAddMugHappy ref = Command genAddMug exec
   [ Require $ \m _ -> m ^. modelHasMug . to not
   , Update $ \m _ _ -> m & modelHasMug .~ True
   ]
   where
-    gen :: Model Symbolic -> Maybe (g (AddMug Symbolic))
-    gen _ = Just $ pure AddMug
-
     exec :: AddMug Concrete -> m ()
     exec _ = do
       ms <- evalIO $ R.readIORef ref
@@ -81,14 +81,11 @@ cAddMugSad
   :: forall g m. (MonadGen g, MonadTest m, MonadIO m)
   => R.IORef C.MachineState
   -> Command g m Model
-cAddMugSad ref = Command gen exec
+cAddMugSad ref = Command genAddMug exec
   [ Require $ \m _ -> m ^. modelHasMug
   , Ensure $ \ _ _ _ res -> either (=== C.MugInTheWay) (const failure) res
   ]
   where
-    gen :: Model Symbolic -> Maybe (g (AddMug Symbolic))
-    gen _ = Just $ pure AddMug
-
     exec :: AddMug Concrete -> m (Either C.MachineError C.MachineState)
     exec _ = evalIO $ C.addMug <$> R.readIORef ref
 
