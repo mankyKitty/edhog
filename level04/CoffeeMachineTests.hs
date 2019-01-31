@@ -11,6 +11,7 @@ import qualified CoffeeMachine as C
 import           Control.Lens (view,makeClassy, (.~), (^.), to)
 import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.IORef as R
+import Data.Maybe (isJust)
 import           Data.Function ((&))
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
@@ -70,12 +71,15 @@ cAddMugHappy
 cAddMugHappy ref = Command genAddMug exec
   [ Require $ \m _ -> m ^. modelHasMug . to not
   , Update $ \m _ _ -> m & modelHasMug .~ True
+  , Ensure $ \_ _ _ -> assert . isJust
   ]
   where
-    exec :: AddMug Concrete -> m ()
+    exec :: AddMug Concrete -> m (Maybe C.Mug)
     exec _ = do
       ms <- evalIO $ R.readIORef ref
-      evalEither (C.addMug ms) >>= evalIO . R.writeIORef ref
+      ms' <- evalEither (C.addMug ms)
+      evalIO $ R.writeIORef ref ms'
+      pure $ view C.mug ms'
 
 cAddMugSad
   :: forall g m. (MonadGen g, MonadTest m, MonadIO m)
