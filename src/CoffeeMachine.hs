@@ -54,7 +54,7 @@ data MachineError
   | NoMug
   | MugFull
   | MugInTheWay
-  deriving Show
+  deriving (Eq, Show)
 
 insertCoins :: Int -> MachineState -> MachineState
 insertCoins n = coins %~ (+n)
