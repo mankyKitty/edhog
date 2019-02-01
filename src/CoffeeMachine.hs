@@ -29,7 +29,7 @@ module CoffeeMachine
 
   , insertCoins
   , refund
-  , knowCost
+  , currentDrinkCost
 
   , addMug
   , takeMug
@@ -116,8 +116,8 @@ insertCoins c = update $ coins +~ c
 refund :: MonadIO m => Machine -> m Int
 refund (Machine ref) = liftIO $ atomicModifyIORef' ref (swap . (coins <<.~ 0))
 
-knowCost :: MonadIO m => Machine -> m Int
-knowCost = fmap (drinkCost . _drinkSetting) . peek
+currentDrinkCost :: MonadIO m => Machine -> m Int
+currentDrinkCost = fmap (drinkCost . _drinkSetting) . peek
 
 addMug :: MonadIO m => Machine -> m (Either MachineError ())
 addMug (Machine ref) = liftIO . atomicModifyIORef' ref $ \st ->

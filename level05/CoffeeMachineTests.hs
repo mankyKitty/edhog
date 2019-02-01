@@ -8,6 +8,7 @@ import qualified CoffeeMachine          as C
 import Control.Monad (void)
 import           Control.Lens           (makeLenses, view, _Just)
 import           Control.Lens.Operators ((+~), (-~), (.~), (?~), (^.), (^?))
+import           Control.Lens.Extras    (is)
 import           Control.Monad.IO.Class (MonadIO)
 import           Data.Function          ((&))
 import           Data.Kind              (Type)
@@ -138,10 +139,10 @@ cAddMilkSugarSad
   -> Command g m Model
 cAddMilkSugarSad mach = Command (genAddMilkSugarCommand (== HotChocolate)) (milkOrSugarExec mach)
   [ Require $ \m _ ->
-      doesntHaveMug m || m ^. modelDrinkType == HotChocolate
+      m ^. modelDrinkType == HotChocolate
 
   , Ensure $ \_ _ _ drink ->
-      drink ^? C._HotChocolate === Just ()
+      assert $ is C._HotChocolate drink
   ]
 
 cAddMilkSugarHappy
@@ -230,9 +231,7 @@ cInsertCoins
   => C.Machine
   -> Command g m Model
 cInsertCoins mach = Command gen exec
-  [ Update $ \m (InsertCoins coins) _ -> m
-      & modelCoins +~ coins
-      -- & modelEnoughCoins .~
+  [ Update $ \m (InsertCoins coins) _ -> m & modelCoins +~ coins
 
   , Ensure $ \oldM newM (InsertCoins coins) currentCoins -> do
       oldM ^. modelCoins + coins === currentCoins
@@ -309,6 +308,7 @@ cDispenseHappy mach = Command gen exec
     okayToDispense :: Model Symbolic -> Bool
     okayToDispense m = hasMug m
       && m ^. modelSufficientCredit `elem` [Enough, TooMuch]
+      && not (m ^. modelHasDispensed)
 
     gen :: Model Symbolic -> Maybe (g (DispenseDrink Symbolic))
     gen m = if okayToDispense m then Just $ pure DispenseDrink else Nothing
