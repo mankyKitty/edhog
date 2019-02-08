@@ -5,10 +5,10 @@
 module CoffeeMachineTests (stateMachineTests) where
 
 import qualified CoffeeMachine          as C
-import Control.Monad (void)
 import           Control.Lens           (makeLenses, view, _Just)
-import           Control.Lens.Operators ((+~), (-~), (.~), (?~), (^.), (^?))
 import           Control.Lens.Extras    (is)
+import           Control.Lens.Operators ((+~), (-~), (.~), (?~), (^.), (^?))
+import           Control.Monad          (void)
 import           Control.Monad.IO.Class (MonadIO)
 import           Data.Function          ((&))
 import           Data.Kind              (Type)
@@ -276,8 +276,8 @@ cCheckCredit _ = Command gen (\_ -> pure ())
       let
         cost = C.drinkCost $ case m ^. modelDrinkType of
           HotChocolate -> C.HotChocolate
-          Coffee -> C.Coffee (C.MilkSugar (m ^. modelMilk) (m ^. modelSugar))
-          Tea -> C.Tea (C.MilkSugar (m ^. modelMilk) (m ^. modelSugar))
+          Coffee       -> C.Coffee (C.MilkSugar (m ^. modelMilk) (m ^. modelSugar))
+          Tea          -> C.Tea (C.MilkSugar (m ^. modelMilk) (m ^. modelSugar))
 
       in m
          & modelDrinkCost .~ cost

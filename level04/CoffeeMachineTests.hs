@@ -7,6 +7,7 @@ module CoffeeMachineTests (stateMachineTests) where
 import           Data.Kind              (Type)
 import qualified CoffeeMachine          as C
 import           Control.Lens           (makeLenses, to, view)
+import           Control.Lens.Extras    (is)
 import           Control.Lens.Operators ((+~), (.~), (^.), (^?))
 import           Control.Monad.IO.Class (MonadIO)
 import           Data.Function          ((&))
@@ -100,11 +101,10 @@ cAddMilkSugarSad
   => C.Machine
   -> Command g m Model
 cAddMilkSugarSad mach = Command (genAddMilkSugarCommand (== HotChocolate)) (milkOrSugarExec mach)
-  [ Require $ \m _ ->
-      not (m ^. modelHasMug) || m ^. modelDrinkType == HotChocolate
+  [ Require $ \m _ -> m ^. modelDrinkType == HotChocolate
 
   , Ensure $ \_ _ _ drink ->
-      drink ^? C._HotChocolate === Just ()
+      assert $ is C._HotChocolate drink
   ]
 
 cAddMilkSugarHappy
@@ -112,8 +112,7 @@ cAddMilkSugarHappy
   => C.Machine
   -> Command g m Model
 cAddMilkSugarHappy ref = Command (genAddMilkSugarCommand (/= HotChocolate)) (milkOrSugarExec ref)
-  [ Require $ \m _ ->
-      m ^. modelHasMug && m ^. modelDrinkType /= HotChocolate
+  [ Require $ \m _ -> m ^. modelDrinkType /= HotChocolate
 
   , Update $ \m (AddMilkSugar additive) _ ->
       m & milkOrSugar additive modelMilk modelSugar +~ 1
