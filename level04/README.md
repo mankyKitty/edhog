@@ -17,3 +17,7 @@ order.
 However if we expanded our model to track whether we had added a mug, then we
 could prevent the `takeMug` command from being a valid command. Unless our
 criteria over a mug being placed was satisified.
+
+The type of drink we have selected is another example of this. If we wanted to
+check that the buttons to add milk or sugar were working correctly, then we need
+to make sure we have the correct type of drink selected.
